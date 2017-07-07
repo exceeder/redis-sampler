@@ -4,11 +4,20 @@
  */
 
 const redis = require("redis");
+let host = '127.0.0.1';
+let port = 6379;
 
+//parse optional arguments
+if (process.argv.length > 2) {
+    let redisURL = process.argv[2].split(":");
+    host = redisURL[0];
+    if (redis[1] !== undefined) {
+        port = Number.parseInt(redisURL[1]);
+    }
+}
 
-let client = process.argv.length > 2 ?
-    redis.createClient(Number.parseInt(process.argv[2].split(':')[1]), process.argv[2].split(':')[0]) :  //with host:port
-    redis.createClient(); //default
+//create Redis client connection
+let client = redis.createClient(port,host);
 
 client.on("error", function (err) {
     console.log("Error " + err);
@@ -110,7 +119,7 @@ function addPrefixSample(prefix, ttl, debug) {
 function formatSize(size) {
     if (size === 0) return "0";
     let i = Math.floor( Math.log(size) / Math.log(1024) );
-    return ( size / Math.pow(1024, i) ).toFixed(2) * 1 + ' ' + ['B', 'kB', 'MB', 'GB'][i];
+    return ( size / Math.pow(1024, i) ).toFixed(2) * 1 + ' ' + ['B', 'kB', 'MB', 'GB', 'TB'][i];
 }
 
 function printResults() {
