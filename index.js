@@ -7,7 +7,7 @@ const redis = require("redis");
 
 
 let client = process.argv.length > 2 ?
-    redis.createClient(process.argv[0].split(':')[0],process.argv[0].split(':')[1]) :  //with host:port
+    redis.createClient(Number.parseInt(process.argv[2].split(':')[1]), process.argv[2].split(':')[0]) :  //with host:port
     redis.createClient(); //default
 
 client.on("error", function (err) {
