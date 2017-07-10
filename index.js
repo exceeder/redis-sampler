@@ -40,6 +40,9 @@ function incFreq(hash, item, amount) {
 
 function sample(size) {
     stats.sampleSize = size;
+    client.dbsize((err, res) => {
+        stats.dbsize = res;
+    });
     for (let i = 0; i < size; i++) {
         sampleIteration(i);
     }
@@ -93,53 +96,68 @@ function addSample(key, type, ttl, debug) {
     }
     stats.knownKeys[key] = key;
     incFreq(stats.types, type);
-    let splits = key.split(/[\s,:.]/);
+    let splits = key.split(/[\s,:."]/);
+    splits = splits.filter(e => e !== ''); //remove empties
     if (splits.length > 1) {
-        addPrefixSample(splits[0], type, ttl, debug);
+        addPrefixSample(splits[0], ttl, debug, 1);
     }
     if (splits.length > 2) {
-        addPrefixSample(splits[0]+"."+splits[1], ttl, debug);
+        addPrefixSample(splits[0]+"~"+splits[1], ttl, debug, 2);
     }
 }
 
-function addPrefixSample(prefix, ttl, debug) {
+function addPrefixSample(prefix, ttl, debug, level) {
     let p = stats.prefixes[prefix];
     if (p === undefined) {
         stats.prefixes[prefix] = p = {};
+        p.level = level;
     }
     incFreq(p,"count");
     incFreq(p,"size",debug.serializedlength);
     if (ttl > 0) {
         incFreq(p, "ttl", ttl);
     } else {
-        incFreq(p, "ttl", -1);
+        incFreq(p, "ttl", 0);
     }
 }
 
 function formatSize(size) {
     if (size === 0) return "0";
     let i = Math.floor( Math.log(size) / Math.log(1024) );
-    return ( size / Math.pow(1024, i) ).toFixed(2) * 1 + ' ' + ['B', 'kB', 'MB', 'GB', 'TB'][i];
+    return ( size / Math.pow(1024, i) ).toFixed(2) * 1 + ' ' + ['B', 'kB', 'MB', 'GB', 'TB', 'PB'][i];
+}
+
+function printPrefixSummary(k,prefix) {
+    console.log(`    [${k}] count: ${prefix.count}, avg size: ${(prefix.size / prefix.count).toFixed(2)}B, avg ttl: ${(prefix.ttl/prefix.count).toFixed(0)}s`);
 }
 
 function printResults() {
     stats.knownKeys = {};
-    console.log("Redis Server found:"+client.server_info.redis_version);
-    console.log("      uptime in sec:"+client.server_info.uptime_in_seconds);
-    console.log("      connected clients:"+client.server_info.connected_clients);
-    console.log("      used memory:"+client.server_info.used_memory_human);
-    console.log("      used memory RSS:"+client.server_info.used_memory_human);
-    console.log("      total commands processed:"+client.server_info.total_commands_processed);
-    console.log("      total net input:"+formatSize(client.server_info.total_net_input_bytes));
-    console.log("      total net output:"+formatSize(client.server_info.total_net_output_bytes));
-    console.log("Sample size (via RANDOMKEY):"+stats.sampleSize);
-    console.log(" sampled types:"+JSON.stringify(stats.types));
-    console.log(" sampled common prefixes:");
+    console.log("Redis Server found: "+client.server_info.redis_version);
+    console.log("      uptime in seconds: "+client.server_info.uptime_in_seconds);
+    console.log("      connected clients: "+client.server_info.connected_clients);
+    console.log("      used memory: "+client.server_info.used_memory_human);
+    console.log("      used memory RSS: "+client.server_info.used_memory_human);
+    console.log("      total number of keys: "+stats.dbsize + ` (${Math.min(stats.sampleSize*100.0/stats.dbsize, 100).toFixed(2)}% sampled)`);
+    console.log("      total commands processed: "+Number.parseInt(client.server_info.total_commands_processed).toLocaleString("en-US"));
+    console.log("      total net input: "+formatSize(client.server_info.total_net_input_bytes));
+    console.log("      total net output: "+formatSize(client.server_info.total_net_output_bytes));
+    console.log("Sample size (via RANDOMKEY): "+stats.sampleSize);
+    console.log(" sampled types: "+JSON.stringify(stats.types));
+    console.log(" sampled top level prefixes (0 TTL means indefinite):");
     for (let k in stats.prefixes) {
         if (stats.prefixes.hasOwnProperty(k)) {
             let prefix = stats.prefixes[k];
-            if (prefix.count < 2) continue; //omit single value prefixes
-            console.log(`    [${k}] count:${prefix.count} avg size:${(prefix.size / prefix.count).toFixed(2)} avg ttl:${(prefix.ttl/prefix.count).toFixed(0)}`);
+            if (prefix.count < 2 || prefix.level > 1) continue; //omit single value or 2nd level prefixes
+            printPrefixSummary(k, prefix);
+        }
+    }
+    console.log(" sampled second level prefixes with more than one value (already included in first level):");
+    for (let k in stats.prefixes) {
+        if (stats.prefixes.hasOwnProperty(k)) {
+            let prefix = stats.prefixes[k];
+            if (prefix.count < 2 || prefix.level < 2) continue; //omit single value prefixes
+            printPrefixSummary(k, prefix);
         }
     }
 }
