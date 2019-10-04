@@ -42,10 +42,15 @@ function sample(size) {
     stats.sampleSize = size;
     client.dbsize((err, res) => {
         stats.dbsize = res;
+        if (res !== 0) {
+            for (let i = 0; i < size; i++) {
+                sampleIteration(i);
+            }
+        } else {
+            client.quit();
+            printResults();
+        }
     });
-    for (let i = 0; i < size; i++) {
-        sampleIteration(i);
-    }
 }
 
 function examineAsync(key) {
@@ -79,7 +84,6 @@ function examineAsync(key) {
 
 function sampleIteration(idx) {
     client.sendCommand('RANDOMKEY', function (err, key) {
-        //console.log(idx + ": " + key);
         examineAsync(key).then(v => {
             addSample(key, v[0], v[1], v[2]);
             if (idx === stats.sampleSize - 1) {
